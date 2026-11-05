@@ -206,7 +206,6 @@ resource "aws_iam_role_policy_attachment" "ecr" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# (Optional convenience) attach AdministratorAccess to worker role so the EC2 instance has full permissions
 resource "aws_iam_role_policy_attachment" "worker_admin" {
   role       = aws_iam_role.worker_role.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
@@ -241,13 +240,15 @@ resource "aws_eks_cluster" "eks" {
 }
 
 ############################
-# EKS ACCESS ENTRY FOR EC2 INSTANCE
+# EKS ACCESS ENTRIES (WITH DEPENDENCIES)
 ############################
 
 resource "aws_eks_access_entry" "ec2_instance_access" {
   cluster_name  = aws_eks_cluster.eks.name
   principal_arn = aws_iam_role.worker_role.arn
   type          = "STANDARD"
+
+  depends_on = [aws_eks_cluster.eks]
 }
 
 resource "aws_eks_access_policy_association" "ec2_admin_access" {
@@ -258,6 +259,8 @@ resource "aws_eks_access_policy_association" "ec2_admin_access" {
   access_scope {
     type = "cluster"
   }
+
+  depends_on = [aws_eks_access_entry.ec2_instance_access]
 }
 
 ############################
@@ -287,7 +290,8 @@ resource "aws_eks_node_group" "node_group" {
   depends_on = [
     aws_iam_role_policy_attachment.worker_node,
     aws_iam_role_policy_attachment.cni,
-    aws_iam_role_policy_attachment.ecr
+    aws_iam_role_policy_attachment.ecr,
+    aws_eks_access_policy_association.ec2_admin_access
   ]
 
   tags = {
@@ -303,11 +307,11 @@ resource "aws_eks_node_group" "node_group" {
 ############################
 
 resource "aws_instance" "eks" {
-  ami                  = "ami-02dfbd4ff395f2a1b"
-  instance_type        = "t2.medium"
-  subnet_id            = aws_subnet.public1.id
+  ami                    = "ami-02dfbd4ff395f2a1b"
+  instance_type          = "t2.medium"
+  subnet_id              = aws_subnet.public1.id
   vpc_security_group_ids = [aws_security_group.allow_all.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
   root_block_device {
     volume_size = "30"
@@ -407,8 +411,8 @@ resource "aws_eks_pod_identity_association" "ebs_csi" {
 }
 
 resource "aws_eks_addon" "ebs_csi" {
-  cluster_name               = aws_eks_cluster.eks.name
-  addon_name                 = "aws-ebs-csi-driver"
+  cluster_name                = aws_eks_cluster.eks.name
+  addon_name                  = "aws-ebs-csi-driver"
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [
