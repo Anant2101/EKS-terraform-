@@ -24,7 +24,6 @@ variable "cluster_version" {
 ############################
 
 resource "aws_vpc" "eks_vpc" {
-
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -35,7 +34,6 @@ resource "aws_vpc" "eks_vpc" {
 }
 
 resource "aws_internet_gateway" "igw" {
-
   vpc_id = aws_vpc.eks_vpc.id
 }
 
@@ -44,7 +42,6 @@ resource "aws_internet_gateway" "igw" {
 ############################
 
 resource "aws_subnet" "public1" {
-
   vpc_id                  = aws_vpc.eks_vpc.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "us-east-1a"
@@ -52,7 +49,6 @@ resource "aws_subnet" "public1" {
 }
 
 resource "aws_subnet" "public2" {
-
   vpc_id                  = aws_vpc.eks_vpc.id
   cidr_block              = "10.0.2.0/24"
   availability_zone       = "us-east-1b"
@@ -60,14 +56,12 @@ resource "aws_subnet" "public2" {
 }
 
 resource "aws_subnet" "private1" {
-
   vpc_id            = aws_vpc.eks_vpc.id
   cidr_block        = "10.0.3.0/24"
   availability_zone = "us-east-1a"
 }
 
 resource "aws_subnet" "private2" {
-
   vpc_id            = aws_vpc.eks_vpc.id
   cidr_block        = "10.0.4.0/24"
   availability_zone = "us-east-1b"
@@ -82,7 +76,6 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "nat" {
-
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public1.id
 }
@@ -92,7 +85,6 @@ resource "aws_nat_gateway" "nat" {
 ############################
 
 resource "aws_route_table" "public" {
-
   vpc_id = aws_vpc.eks_vpc.id
 
   route {
@@ -102,19 +94,16 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "pub1" {
-
   subnet_id      = aws_subnet.public1.id
   route_table_id = aws_route_table.public.id
 }
 
 resource "aws_route_table_association" "pub2" {
-
   subnet_id      = aws_subnet.public2.id
   route_table_id = aws_route_table.public.id
 }
 
 resource "aws_route_table" "private" {
-
   vpc_id = aws_vpc.eks_vpc.id
 
   route {
@@ -124,40 +113,33 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "priv1" {
-
   subnet_id      = aws_subnet.private1.id
   route_table_id = aws_route_table.private.id
 }
 
 resource "aws_route_table_association" "priv2" {
-
   subnet_id      = aws_subnet.private2.id
   route_table_id = aws_route_table.private.id
 }
 
 resource "aws_security_group" "allow_all" {
-
   name        = "allow-all-sg"
   description = "Allow all inbound and outbound traffic"
   vpc_id      = aws_vpc.eks_vpc.id
 
   ingress {
-
     description = "Allow all inbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-
     description = "Allow all outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -165,12 +147,12 @@ resource "aws_security_group" "allow_all" {
     Name = "allow-all-sg"
   }
 }
+
 ############################
 # IAM ROLE - CLUSTER
 ############################
 
 resource "aws_iam_role" "cluster_role" {
-
   name = "eks-cluster-role"
 
   assume_role_policy = jsonencode({
@@ -186,17 +168,15 @@ resource "aws_iam_role" "cluster_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_policy" {
-
   role       = aws_iam_role.cluster_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
 ############################
-# IAM ROLE - NODE GROUP
+# IAM ROLE - NODE GROUP / EC2 INSTANCE
 ############################
 
 resource "aws_iam_role" "worker_role" {
-
   name = "eks-worker-role"
 
   assume_role_policy = jsonencode({
@@ -212,21 +192,24 @@ resource "aws_iam_role" "worker_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "worker_node" {
-
   role       = aws_iam_role.worker_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "cni" {
-
   role       = aws_iam_role.worker_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 resource "aws_iam_role_policy_attachment" "ecr" {
-
   role       = aws_iam_role.worker_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# (Optional convenience) attach AdministratorAccess to worker role so the EC2 instance has full permissions
+resource "aws_iam_role_policy_attachment" "worker_admin" {
+  role       = aws_iam_role.worker_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
 ############################
@@ -234,13 +217,11 @@ resource "aws_iam_role_policy_attachment" "ecr" {
 ############################
 
 resource "aws_eks_cluster" "eks" {
-
   name     = "naresh"
   role_arn = aws_iam_role.cluster_role.arn
   version  = var.cluster_version
 
   vpc_config {
-
     subnet_ids = [
       aws_subnet.private1.id,
       aws_subnet.private2.id
@@ -249,9 +230,34 @@ resource "aws_eks_cluster" "eks" {
     endpoint_public_access = true
   }
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.cluster_policy
   ]
+}
+
+############################
+# EKS ACCESS ENTRY FOR EC2 INSTANCE
+############################
+
+resource "aws_eks_access_entry" "ec2_instance_access" {
+  cluster_name  = aws_eks_cluster.eks.name
+  principal_arn = aws_iam_role.worker_role.arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "ec2_admin_access" {
+  cluster_name  = aws_eks_cluster.eks.name
+  policy_arn    = "arn:aws:iam::aws:policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = aws_iam_role.worker_role.arn
+
+  access_scope {
+    type = "cluster"
+  }
 }
 
 ############################
@@ -259,7 +265,6 @@ resource "aws_eks_cluster" "eks" {
 ############################
 
 resource "aws_eks_node_group" "node_group" {
-
   cluster_name    = aws_eks_cluster.eks.name
   node_group_name = "eks-node-group"
 
@@ -271,11 +276,9 @@ resource "aws_eks_node_group" "node_group" {
     aws_subnet.private2.id
   ]
 
-
   instance_types = ["t3.medium"]
 
   scaling_config {
-
     desired_size = 4
     max_size     = 6
     min_size     = 1
@@ -286,6 +289,7 @@ resource "aws_eks_node_group" "node_group" {
     aws_iam_role_policy_attachment.cni,
     aws_iam_role_policy_attachment.ecr
   ]
+
   tags = {
     Name        = "eks-node"
     Environment = "dev"
@@ -294,16 +298,20 @@ resource "aws_eks_node_group" "node_group" {
   }
 }
 
+############################
+# MANAGEMENT EC2 INSTANCE
+############################
 
 resource "aws_instance" "eks" {
-  ami                    = "ami-02dfbd4ff395f2a1b"
-  instance_type          = "t2.medium"
-  subnet_id              = aws_subnet.public1.id
+  ami                  = "ami-02dfbd4ff395f2a1b"
+  instance_type        = "t2.medium"
+  subnet_id            = aws_subnet.public1.id
   vpc_security_group_ids = [aws_security_group.allow_all.id]
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+
   root_block_device {
     volume_size = "30"
   }
-
 
   tags = {
     Name = "eks"
@@ -311,76 +319,60 @@ resource "aws_instance" "eks" {
 
   user_data = <<-EOF
                 #!/bin/bash
-                # Update system
                 yum update -y
 
-                # ----------------------------- Install kubectl -----------------------------
+                # Install kubectl
                 curl -o /tmp/kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
                 chmod +x /tmp/kubectl
                 mv /tmp/kubectl /usr/local/bin/kubectl
-
-                # Verify kubectl
                 kubectl version --client || true
 
-                # ----------------------------- Install eksctl -------------------------------
+                # Install eksctl
                 curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" \
                 | tar xz -C /tmp
-
                 mv /tmp/eksctl /usr/local/bin/eksctl
-
-                # Verify eksctl
                 eksctl version || true
-
                 EOF
-
 }
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "eks-ec2-instance-profile"
+  role = aws_iam_role.worker_role.name
+}
+
 ############################
 # EKS ADDONS
 ############################
 
 resource "aws_eks_addon" "vpc_cni" {
-
-  cluster_name = aws_eks_cluster.eks.name
-  addon_name   = "vpc-cni"
-
+  cluster_name                = aws_eks_cluster.eks.name
+  addon_name                  = "vpc-cni"
   resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [aws_eks_node_group.node_group]
+  depends_on                  = [aws_eks_node_group.node_group]
 }
 
 resource "aws_eks_addon" "coredns" {
-
-  cluster_name = aws_eks_cluster.eks.name
-  addon_name   = "coredns"
-
+  cluster_name                = aws_eks_cluster.eks.name
+  addon_name                  = "coredns"
   resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [aws_eks_node_group.node_group]
+  depends_on                  = [aws_eks_node_group.node_group]
 }
 
 resource "aws_eks_addon" "kube_proxy" {
-
-  cluster_name = aws_eks_cluster.eks.name
-  addon_name   = "kube-proxy"
-
+  cluster_name                = aws_eks_cluster.eks.name
+  addon_name                  = "kube-proxy"
   resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [aws_eks_node_group.node_group]
+  depends_on                  = [aws_eks_node_group.node_group]
 }
 
 resource "aws_eks_addon" "pod_identity" {
-
-  cluster_name = aws_eks_cluster.eks.name
-  addon_name   = "eks-pod-identity-agent"
-
+  cluster_name                = aws_eks_cluster.eks.name
+  addon_name                  = "eks-pod-identity-agent"
   resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [aws_eks_node_group.node_group]
+  depends_on                  = [aws_eks_node_group.node_group]
 }
 
-
 resource "aws_iam_role" "ebs_csi_role" {
-
   name = "AmazonEKS_EBS_CSI_DriverRole"
 
   assume_role_policy = jsonencode({
@@ -399,7 +391,6 @@ resource "aws_iam_role" "ebs_csi_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi_policy" {
-
   role       = aws_iam_role.ebs_csi_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
@@ -408,8 +399,7 @@ resource "aws_eks_pod_identity_association" "ebs_csi" {
   cluster_name    = aws_eks_cluster.eks.name
   namespace       = "kube-system"
   service_account = "ebs-csi-controller-sa"
-
-  role_arn = aws_iam_role.ebs_csi_role.arn
+  role_arn        = aws_iam_role.ebs_csi_role.arn
 
   depends_on = [
     aws_iam_role_policy_attachment.ebs_csi_policy
@@ -417,9 +407,8 @@ resource "aws_eks_pod_identity_association" "ebs_csi" {
 }
 
 resource "aws_eks_addon" "ebs_csi" {
-
-  cluster_name                = aws_eks_cluster.eks.name
-  addon_name                  = "aws-ebs-csi-driver"
+  cluster_name               = aws_eks_cluster.eks.name
+  addon_name                 = "aws-ebs-csi-driver"
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [
